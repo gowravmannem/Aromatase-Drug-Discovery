@@ -18,6 +18,37 @@ def desc_calc():
     output, error = process.communicate()
     os.remove('molecule.smi')
 
+# Lipinski Descriptor calculator
+def lipinski(smiles, verbose=False):
+
+    moldata= []
+    for elem in smiles:
+        mol=Chem.MolFromSmiles(elem)
+        moldata.append(mol)
+
+    baseData= np.arange(1,1)
+    i=0
+    for mol in moldata:
+
+        desc_MolWt = Descriptors.MolWt(mol)
+        desc_NumHDonors = Lipinski.NumHDonors(mol)
+        desc_NumHAcceptors = Lipinski.NumHAcceptors(mol)
+
+        row = np.array([desc_MolWt,
+                        desc_NumHDonors,
+                        desc_NumHAcceptors])
+
+        if(i==0):
+            baseData=row
+        else:
+            baseData=np.vstack([baseData, row])
+        i=i+1
+
+    columnNames=["MW","NumHDonors","NumHAcceptors"]
+    descriptors = pd.DataFrame(data=baseData,columns=columnNames)
+
+    return descriptors
+
 # File download
 def filedownload(df):
     csv = df.to_csv(index=False)
@@ -46,7 +77,7 @@ This app allows you to predict how effective a compound is at inhibting the `Aro
 - App built in `Python` + `Streamlit` by [Gowrav Mannem](https://www.linkedin.com/in/gowrav-mannem-830896218/).
 - Adopted from Chanin Nantasenamat's(AKA [Dataprofessor](https://github.com/dataprofessor)) [Youtube Tutorial](https://www.youtube.com/watch?v=jBlTQjcKuaY&t=4960s)
 - Descriptor calculated using [PaDEL-Descriptor](http://www.yapcwsoft.com/dd/padeldescriptor/).
-- Lipinski Descriptors foudn using rdkit
+- Lipinski Descriptors found using [RDKit](https://www.rdkit.org/).
 ---
 """)
 
@@ -56,27 +87,38 @@ with st.sidebar.header('1. Upload your CSV data'):
     st.sidebar.markdown("""
 [Example input file](https://raw.githubusercontent.com/dataprofessor/bioactivity-prediction-app/main/example_acetylcholinesterase.txt)
 """)
-
+# User starts prediction process
 if st.sidebar.button('Predict'):
+    # reading input data
     load_data = pd.read_table(uploaded_file, sep=' ', header=None)
     load_data.to_csv('molecule.smi', sep = '\t', header = False, index = False)
 
+    # printing out input data
     st.header('**Original input data**')
     st.write(load_data)
 
+    # animation
     with st.spinner("Calculating descriptors..."):
         desc_calc()
 
     # Read in calculated descriptors and display the dataframe
-    st.header('**Calculated molecular descriptors**')
-    desc = pd.read_csv('descriptors_output.csv')
-    st.write(desc)
-    st.write(desc.shape)
+    st.header('**Calculated Fingerprint descriptors**')
+    fp_desc = pd.read_csv('descriptors_output.csv')
+    st.write(fp_desc)
+    st.write(fp_desc.shape)
 
+    # Read in Lipinski descriptors
+    lipinski_df=lipinski(load_data)
+    st.header('**Calculated Lipinski Descriptors**')
+    st.write(lipinski_df)
+    st.write(lipinski_df.shape)
+
+    # combining the two dataframes
+    aromatase_XY = pd.concat([fp_desc, lipinski_df], axis=1).reindex(fp_desc.index)
     # Read descriptor list used in previously built model
-    st.header('**Subset of descriptors from previously built models**')
+    st.header('**Combining the two dataframes and dropping Low variance features**')
     Xlist = list(pd.read_csv('descriptor_list.csv').columns)
-    desc_subset = desc[Xlist]
+    desc_subset = aromatase_XY[Xlist]
     st.write(desc_subset)
     st.write(desc_subset.shape)
 
